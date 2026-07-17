@@ -57,7 +57,7 @@ def build_prompt():
         diliao=readfile(os.path.join(REPO,"diliao.md"))
     today=bj_now().strftime("%Y-%m-%d")
     dx=[t.strip() for t in readfile(os.path.join(REPO,"dingxiang.txt")).splitlines() if t.strip() and not t.strip().startswith("#")]
-    jd=readfile(os.path.join(REPO,"jingdui.txt"))
+    jd="\n".join(l for l in readfile(os.path.join(REPO,"jingdui.txt")).splitlines() if l.strip() and not l.strip().startswith("#"))
     return (diliao+"\n\n=== 以上是部门底料，据此筛选/路由/按第八节格式与铁律写 ===\n\n"
         +"今天日期："+today+"\n昨天那版播报（不要重复，除非有大变化）：\n"+yesterday()[:3000]+"\n\n"
         +"定向必盯词："+("、".join(dx) if dx else "无")+"\n\n"
