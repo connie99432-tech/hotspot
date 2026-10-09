@@ -46,7 +46,12 @@ def deepseek(prompt):
     with urllib.request.urlopen(req,timeout=180) as r: return json.loads(r.read().decode("utf-8"))["choices"][0]["message"]["content"]
 
 def build_prompt():
-    diliao=base64.b64decode(os.environ.get("DILIAO_B64","")).decode("utf-8") if os.environ.get("DILIAO_B64") else readfile(os.path.join(REPO,"diliao.md"))
+    diliao=""
+    _b64=os.environ.get("DILIAO_B64","").strip()
+    if _b64:
+        try: diliao=base64.b64decode(_b64).decode("utf-8")
+        except Exception: diliao=""
+    if not diliao: diliao=readfile(os.path.join(REPO,"diliao.md"))
     today=bj_now().strftime("%Y-%m-%d")
     dx=[t.strip() for t in readfile(os.path.join(REPO,"dingxiang.txt")).splitlines() if t.strip() and not t.strip().startswith("#")]
     jd=readfile(os.path.join(REPO,"jingdui.txt"))
