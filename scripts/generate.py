@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-"""GitHub Actions 每天跑：抓源 → DeepSeek 出稿 → 防伪校验 → 写 briefing.json。"""
+"""GitHub Actions 每天跑：抓源 → DeepSeek 出稿 → 写 briefing.json。"""
 import os, json, base64, datetime, urllib.request, re
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -8,24 +8,6 @@ NEWSNOW = ["weibo","douyin","baidu","zhihu","bilibili-hot-search","toutiao","the
 RSSHUB = "https://rsshub-hotspot.onrender.com"
 RSS_ROUTES = ["/adquan","/36kr/newsflashes"]
 HEADS = {"龙秋帆":"longqiufan","孙旭":"sunxu25","赵雨婷":"zhaoyuting32","邵子益":"shaoziyi.3","刘柳":"liuliu41","王洪晶":"wanghongjing1","关楚凡":"guanchufan1","陈卓":"chenzhuo108","戴宜哲":"daiyizhe1","杨岭":"yangling62","申雯萱":"","王畅":"wangchang50"}
-
-ROUTING = (
-"【对接人分工·按业务@对的人（只@下面这些花名）】\n"
-"龙秋帆=平台营销部：大促/明星/IP/体育赛事/看球季/综艺\n"
-"孙旭=家电家居：家电/家居/3C大家电/智能家居\n"
-"赵雨婷=3C数码：手机/电脑/平板/耳机手表/游戏设备/AI硬件/苹果华为新品\n"
-"邵子益=大商超：商超/生鲜果蔬/食品饮料/日用快消/烘焙/酒水\n"
-"刘柳=大时尚：服饰/鞋包/运动户外/美妆护肤/珠宝\n"
-"王洪晶=健康与自有品牌：医药/保健/健康/医美（法规敏感，谨慎）\n"
-"关楚凡=企业营销：外卖/酒旅/秒送/本地生活/餐饮到家\n"
-"陈卓=跨境业务与汽车：全球购/进口好物/跨境/汽车\n"
-"戴宜哲=品牌部：品牌策划/campaign/品牌传播打法\n"
-"杨岭=综合媒体官号：官方账号趣味/科普/话题互动内容\n"
-"王畅=小红书官号：小红书种草/出片/达人内容\n"
-)
-
-# 防伪校验：带这些高风险字眼的条目，必须在真实素材里能对上，否则删
-RISK_TOKENS = ["死","失联","遇难","伤亡","受伤","重伤","崩塌","塌方","坍塌","地震","爆炸","起火","坠","中毒","召回","致癌","确诊","疫情","溺","事故","洪灾","泥石流","跳楼","身亡","抢劫","刺伤","坠亡"]
 
 def bj_now(): return datetime.datetime.utcnow()+datetime.timedelta(hours=8)
 def readfile(p):
@@ -39,14 +21,8 @@ def hot_lists():
     for pid in NEWSNOW:
         try:
             d=json.loads(fetch("https://newsnow.busiyi.world/api/s?id=%s&latest"%pid))
-            rows=[]
-            for it in d.get("items",[])[:13]:
-                t=(it.get("title") or "").strip()
-                if not t: continue
-                ex=it.get("extra") or {}
-                hv=re.sub(r"\s+"," ",(ex.get("hover") or "").strip())
-                rows.append("· "+t+("——"+hv[:90] if hv else ""))
-            if rows: out.append("【%s】\n"%pid+"\n".join(rows))
+            ts=[it.get("title","").strip() for it in d.get("items",[])][:15]; ts=[t for t in ts if t]
+            if ts: out.append("【%s】%s"%(pid," / ".join(ts)))
         except Exception: pass
     return "\n".join(out)
 def rss_titles():
@@ -65,61 +41,37 @@ def yesterday():
     except Exception: return ""
 def deepseek(prompt):
     key=os.environ["DEEPSEEK_API_KEY"]
-    body=json.dumps({"model":"deepseek-chat","messages":[{"role":"user","content":prompt}],"temperature":0.6,"max_tokens":4000}).encode("utf-8")
+    body=json.dumps({"model":"deepseek-chat","messages":[{"role":"user","content":prompt}],"temperature":0.7,"max_tokens":4000}).encode("utf-8")
     req=urllib.request.Request("https://api.deepseek.com/chat/completions",data=body,headers={"Content-Type":"application/json","Authorization":"Bearer "+key},method="POST")
     with urllib.request.urlopen(req,timeout=180) as r: return json.loads(r.read().decode("utf-8"))["choices"][0]["message"]["content"]
 
-def validate(body, pool):
-    """逐条防伪：高风险(伤亡/灾害/召回等)条目，若主体在真实素材里找不到→删。"""
-    kept=[]; dropped=[]
-    for line in body.split("\n"):
-        st=line.strip()
-        m=re.match(r"^\d+、\s*【(.+?)】", st)
-        if m and any(k in st for k in RISK_TOKENS):
-            chunks=re.findall(r"[一-龥]{3,}", m.group(1))  # 3字以上片段=地名/主体
-            if chunks and not any(c in pool for c in chunks):
-                dropped.append(m.group(1)); continue
-        kept.append(line)
-    if dropped: print("⚠️防伪校验删除疑似编造条目:", " || ".join(dropped))
-    return "\n".join(kept)
-
-def build_prompt(hot, rss):
-    _dl=os.environ.get("DILIAO_B64","")
-    diliao=""
-    if _dl:
-        try: diliao=base64.b64decode(_dl).decode("utf-8")
-        except Exception: diliao=_dl
-    if not diliao: diliao=readfile(os.path.join(REPO,"diliao.md"))
+def build_prompt():
+    diliao=base64.b64decode(os.environ.get("DILIAO_B64","")).decode("utf-8") if os.environ.get("DILIAO_B64") else readfile(os.path.join(REPO,"diliao.md"))
     today=bj_now().strftime("%Y-%m-%d")
     dx=[t.strip() for t in readfile(os.path.join(REPO,"dingxiang.txt")).splitlines() if t.strip() and not t.strip().startswith("#")]
-    jd="\n".join(l for l in readfile(os.path.join(REPO,"jingdui.txt")).splitlines() if l.strip() and not l.strip().startswith("#"))
-    return (diliao+"\n\n=== 以上是部门底料，据此筛选/路由/按格式与铁律写 ===\n\n"
-        +ROUTING+"\n"
-        +"今天日期："+today+"\n昨天那版播报（今天不要重复同一话题，除非有新数据/新进展/新对阵/新争议/新梗）：\n"+yesterday()[:3000]+"\n\n"
+    jd=readfile(os.path.join(REPO,"jingdui.txt"))
+    return (diliao+"\n\n=== 以上是部门底料，据此筛选/路由/按下面格式与铁律写 ===\n\n"
+        +"今天日期："+today+"\n昨天那版播报（下面这份，不要重复，除非有大变化或下面规则里说的升级重报）：\n"+yesterday()[:3000]+"\n\n"
         +"定向必盯词："+("、".join(dx) if dx else "无")+"\n\n"
-        +"竞对手动喂料：\n"+(jd or "（今天为空）")+"\n\n"
-        +"全网热榜（含简介，据此判断为什么火、怎么接）：\n"+hot+"\n\n"
-        +"营销垂媒/行业(广告门+36氪)：\n"+rss+"\n\n"
-        +"写一份【营销热点日报 · "+today+"】，严格按下列铁律：\n"
-        +"1) 首行 `# 营销热点日报 · "+today+"`；二行『今天最值得关注的：…』不带括号补充。\n"
-        +"2) 固定6板块（社会民生/体育赛事/娱乐明星/科技数码/消费生活/竞对营销），**每板块最多2条、精选**。\n"
-        +"3) **板块没真料就整块省略**：某板块当天没有真实、有增量的内容就不出这个板块。\n"
-        +"4) **竞对营销板块**：只有真实竞对/品牌营销案例（来自竞对喂料或广告门/36氪垂媒）才出；**没有就整块省略，绝不写『营销圈热议』『通道受限』『暂未抓到』这类占位废话硬凑，更不为了凑内容@人**。\n"
-        +"5) **@必须对应一条真实、且有行动价值的热点**；没有值得某业务行动的点就不@。@只用上面路由表里的花名、按业务@对人；@直接跟花名、不加『建议』二字、不带部门名。\n"
-        +"6) 每条格式：『【看得懂的标题】：一两句人话。@花名 关注，可考虑…』。建议要礼貌、简短、商量口吻、点到为止一句话；**不批评/不甩锅/不教训**（不写『别再…』『别只…』『别被…盖过』这类否定式）。\n"
-        +"7) **说人话**：标题正文都用大白话、不懂行的人一眼看懂；**禁黑话缩写**（站内承接/导成/对位/心智/UGC/进站搜索等换成人话）；**绝不写『（窗口X/X前）』这类项目传播时间**。\n"
-        +"8) **重大灾害/伤亡/讣告**：只客观简述、当一条热点让大家知道即可，**不@任何对接人、不给任何营销建议**（尺度难控、不消费苦难）。此类只写当天素材里真实出现的事件，**严禁编造，也严禁把本说明里的举例当成真事写进去**。\n"
-        +"9) **所有条目必须来自上面提供的真实热榜/垂媒素材，严禁虚构事件、数字、代言或案例；宁可少写一条，也绝不许编。**\n"
-        +"10) 剔除『内部尽人皆知的自家事』纯复述（如某合作是京东独家），除非有新增量。\n"
-        +"11) 结尾固定两行：『以上各业务侧可参考&评估跟进~』 和 『内容由AI助手整理发布，有问题或建议请随时联系huke1。』。\n"
-        +"只输出播报正文，不要任何解释或代码块标记。")
+        +"竞对手动喂料（每条必收进竞对板块；为空就按规则不出竞对板块）：\n"+(jd or "（今天为空）")+"\n\n"
+        +"全网热榜：\n"+hot_lists()+"\n\n"
+        +"营销垂媒/行业(广告门+36氪)：\n"+rss_titles()+"\n\n"
+        +"写一份【营销热点日报 · "+today+"】，严格按下面的规则和铁律，只输出播报正文、不要任何解释：\n"
+        +"【格式】首行 `# 营销热点日报 · "+today+"`；第二行 '今天最值得关注的：…'（一句话串当天最重要的几条，不带任何括号补充）；固定6板块、板块名加粗、板块之间空一行：社会民生 / 体育赛事 / 娱乐明星 / 科技数码 / 消费生活 / 竞对营销；每板块精选不超过2条；结尾另起一行 '以上各业务侧可参考&评估跟进~'，再另起一行 '内容由AI助手整理发布，有问题或建议请随时联系huke1。'。\n"
+        +"【每条怎么写】'【看得懂的标题】：一两句说清这是什么事。@花名 关注，可考虑…'；@直接跟花名、不加'建议'二字、不带部门名。\n"
+        +"【★落点必须具体、禁空话】'可考虑'后面必须落到一个具体的承接动作，要具体到品类/货盘/玩法/场景（例：'带一带体脂秤、筋膜枪这类家用运动好物'；'把家用血压计叠国补做成在家测血压的科普带货'）。严禁写'聊内容方向''做个专题''做相关内容''顺势承接'这类没有实际抓手的空话；想不出具体落点的，宁可不@、把这条删掉。\n"
+        +"【说人话】标题和正文都要让不懂行的人、老板一眼看懂；不许写'（窗口X/X前）'这类内部时间；不用黑话缩写（站内承接、导成、对位、心智、UGC、进站搜索、超级周期等换成大白话，缩写首次出现带一句解释）。\n"
+        +"【建议口吻】@后面的建议礼貌、简短、商量口吻、一句话够；不批评不甩锅不教训，不写'别再…''别只…''别被…盖过'这类否定提醒。\n"
+        +"【筛选】①京东自己尽人皆知的既定合作/热度（纯复述、无增量）不要写，只有出现新进展/新数据/新争议/新梗/竞对也在蹭 才报；②不要重复上面昨天那版已报的，同一话题只是复述昨天、没新进展＝不写；③但某事件量级跃升或换了维度（国内→出海、单平台→登全球榜、明星个人→产业级破纪录、口碑→争议撕裂），即使昨天出现过也是新增量、必须重报并按更大维度重写标题；④定向必盯词当天只要有动静就必须报，尤其苹果新品/发布会/开卖这类节点。\n"
+        +"【三硬beat别偏科】AI与科技趋势、3C新品官宣（手机/电脑/数码新品发布开卖）、竞对大促或代言官宣——这三类常常不在大众热搜榜上但对我们最有用，每天主动从营销垂媒和热榜里挖，别只盯社会八卦和娱乐。\n"
+        +"【竞对板块】竞对喂料每条都必须收进竞对板块，另从广告门/36氪里挑真实的竞对动作或可借鉴的品牌案例；当天确实没有真料就整个竞对板块不出，不要写'营销圈热议''暂未抓到'这类占位废话，更不要为凑数去@人。\n"
+        +"【空板块】任何板块当天没有真实、有增量、且值得某业务行动的内容，就整块省略；@必须对应一条真实且有行动价值的热点，没有就不@。\n"
+        +"【雷区】①重大灾害、伤亡事故、讣告（地震/山体滑坡/重大车祸/空难等）只客观简述一句、当作一条让大家知道即可，绝不@人、绝不给任何营销建议；②其他一般灾害/事故只从安全防护、公益、科普的正向角度切；③健康类不夸大功效、不写疗效承诺；④不碰政治、宗教、性别对立等敏感对立话题。")
 
 def main():
-    hot=hot_lists(); rss=rss_titles(); pool=hot+"\n"+rss
-    body=deepseek(build_prompt(hot,rss)).strip()
+    body=deepseek(build_prompt()).strip()
     if body.startswith("```"):
         body=body.strip("`"); body=body.split("\n",1)[1] if "\n" in body else body
-    body=validate(body, pool)   # 防伪校验：删掉在真实素材里对不上的高风险条目
     names=re.findall(r"@([^\s，,、：:；;（）()@]+)",body); erps=[]
     for n in names:
         e=HEADS.get(n,"")
