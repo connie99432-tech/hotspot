@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>营销热点日报</title>
+<style>
+:root{color-scheme:light}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,"PingFang SC","Microsoft YaHei",sans-serif;background:#f5f6f8;color:#1a1a1a;line-height:1.6;padding:16px;max-width:900px;margin:0 auto}
+.top{display:flex;justify-content:space-between;align-items:flex-end;border-bottom:3px solid #E1251B;padding-bottom:12px;margin-bottom:16px;flex-wrap:wrap;gap:8px}
+.brand{font-size:12px;color:#E1251B;font-weight:700;letter-spacing:1px}
+h1{font-size:24px;font-weight:800}
+.right{text-align:right}
+.meta{font-size:12px;color:#888;margin-top:4px}
+.refresh{background:#E1251B;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:13px;cursor:pointer}
+.intro{background:#fff;border-left:4px solid #E1251B;padding:12px 14px;border-radius:6px;font-weight:600;margin-bottom:16px;font-size:15px}
+.sec{background:#fff;border-radius:8px;margin-bottom:14px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.sechd{padding:10px 14px;color:#fff;font-weight:700;font-size:16px;display:flex;justify-content:space-between;align-items:center}
+.cnt{font-size:12px;opacity:.85;font-weight:500}
+.items{padding:4px 14px 10px}
+.item{padding:10px 0;border-bottom:1px dashed #eee;font-size:14px}
+.item:last-child{border-bottom:none}
+.ttl{color:#E1251B;font-weight:700}
+.at{color:#1D5FBF;font-weight:700;background:#eaf1fb;border-radius:4px;padding:0 4px}
+.empty{color:#999;padding:30px;text-align:center}
+.foot{color:#999;font-size:12px;text-align:center;margin-top:16px;padding-bottom:30px}
+</style>
+</head>
+<body>
+<div class="top">
+ <div><div class="brand">京东整合营销 · 内部热点情报</div><h1 id="title">营销热点日报</h1></div>
+ <div class="right"><button class="refresh" onclick="load()">刷新</button><div class="meta" id="meta"></div></div>
+</div>
+<div id="app"><div class="empty">加载中…</div></div>
+<div class="foot">内容由AI助手整理发布 · 本页只读，发群以京Me群为准</div>
+<script>
+var SRC="https://raw.githubusercontent.com/connie99432-tech/hotspot/main/briefing.json";
+var CATS=['社会民生','体育赛事','娱乐明星','科技数码','消费生活','竞对营销'];
+var COLORS={'社会民生':'#1F7A5A','体育赛事':'#1D5FBF','娱乐明星':'#B0328C','科技数码':'#0E8A8F','消费生活':'#CC6B1F','竞对营销':'#C7362F'};
+function esc(s){return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');}
+function renderItem(t){
+ var h=esc(t);
+ h=h.replace(/^【([^】]+)】/,'<span class="ttl">【$1】</span>');
+ h=h.replace(/@([^\s，,、：:；;（）()]+)/g,'<span class="at">@$1</span>');
+ return h;
+}
+function parse(txt){
+ var title='',intro='',map={},cur=null;
+ (txt||'').split('\n').forEach(function(ln){
+  var t=ln.trim(); if(!t)return;
+  if(/^#\s/.test(t)){title=t.replace(/^#\s*/,'');return;}
+  var hd=t.replace(/\*\*/g,'').replace(/^#+\s*/,'').trim();
+  if(CATS.indexOf(hd)>=0){cur=hd;if(!map[cur])map[cur]=[];return;}
+  if(/^@ERPS[:：]/.test(t))return;
+  if(/^以上各业务/.test(t)||/^内容由AI助手/.test(t))return;
+  var mi=t.match(/^\d+、(.+)$/);
+  if(mi){if(cur)map[cur].push(mi[1]);return;}
+  if(!intro&&!cur)intro=t;
+ });
+ return {title:title,intro:intro,map:map};
+}
+function render(data){
+ var p=parse(data.briefing_body||'');
+ document.getElementById('title').textContent=p.title||'营销热点日报';
+ document.getElementById('meta').textContent=data.updated_at?('更新：'+data.updated_at):'';
+ var html='';
+ if(p.intro)html+='<div class="intro">'+esc(p.intro)+'</div>';
+ var any=false;
+ CATS.forEach(function(c){
+  var arr=p.map[c]||[]; if(!arr.length)return; any=true;
+  html+='<div class="sec"><div class="sechd" style="background:'+COLORS[c]+'"><span>'+c+'</span><span class="cnt">'+arr.length+'条</span></div><div class="items">';
+  arr.forEach(function(it){html+='<div class="item">'+renderItem(it)+'</div>';});
+  html+='</div></div>';
+ });
+ document.getElementById('app').innerHTML=any?html:'<div class="empty">今天还没有内容</div>';
+}
+function load(){
+ document.getElementById('app').innerHTML='<div class="empty">加载中…</div>';
+ fetch(SRC+'?t='+Date.now()).then(function(r){return r.json();}).then(render).catch(function(e){
+  document.getElementById('app').innerHTML='<div class="empty">读取失败，请稍后点刷新<br><small>'+esc(String(e))+'</small></div>';
+ });
+}
+load();
+</script>
+</body>
+</html>
